@@ -71,9 +71,16 @@ const imageProgressSteps = [
   '🖼️ Генерирую изображение...',
 ];
 
+const logRequest = (msg, type, content) => {
+  const user = msg.from?.username ? `@${msg.from.username}` : msg.from?.first_name || 'unknown';
+  const time = new Date().toISOString();
+  console.log(`[${time}] ${user} (${msg.chat.id}) [${type}]: ${content}`);
+};
+
 bot.on('photo', async (msg) => {
   const chatId = msg.chat.id;
   const caption = msg.caption || 'Что изображено на этом фото? Опиши подробно.';
+  logRequest(msg, 'photo', caption);
   resetInactivityTimer(chatId);
 
   const progressMsg = await bot.sendMessage(chatId, '⏳ Получил фото...');
@@ -128,6 +135,7 @@ bot.on('message', async (msg) => {
 
   if (!userText || userText.startsWith('/')) return;
 
+  logRequest(msg, 'text', userText);
   resetInactivityTimer(chatId);
   const imageMode = isImageRequest(userText);
   const steps = imageMode ? imageProgressSteps : progressSteps;
