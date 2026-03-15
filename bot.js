@@ -4,6 +4,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI = require('openai');
 const https = require('https');
 const http = require('http');
+const fs = require('fs');
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, {
   polling: { autoStart: true, params: { timeout: 10 } },
@@ -21,10 +22,23 @@ const downloadImageAsBase64 = (url) => new Promise((resolve, reject) => {
   }).on('error', reject);
 });
 
+// Персистентное хранилище последних промптов картинок
+const IMAGE_PROMPTS_FILE = './lastImagePrompts.json';
+const loadImagePrompts = () => {
+  try {
+    const data = JSON.parse(fs.readFileSync(IMAGE_PROMPTS_FILE, 'utf8'));
+    return new Map(Object.entries(data));
+  } catch { return new Map(); }
+};
+const saveImagePrompts = (map) => {
+  fs.writeFileSync(IMAGE_PROMPTS_FILE, JSON.stringify(Object.fromEntries(map)));
+};
+
 // История чатов: chatId -> [{role, content}]
 const chatHistory = new Map();
 const chatTimers = new Map();
-const MAX_HISTORY = 10; // максимум сообщений на чат
+const lastImagePrompt = loadImagePrompts(); // последний промпт сгенерированной картинки
+const MAX_HISTORY = 25; // максимум сообщений на чат
 const INACTIVITY_TIMEOUT = 120_000; // 120 секунд
 
 const getHistory = (chatId) => chatHistory.get(chatId) || [];
@@ -41,6 +55,8 @@ const resetInactivityTimer = (chatId) => {
   const timer = setTimeout(() => {
     if (chatHistory.has(chatId)) {
       chatHistory.delete(chatId);
+      lastImagePrompt.delete(chatId);
+      saveImagePrompts(lastImagePrompt);
       bot.sendMessage(chatId, '⏱️ Диалог завершён автоматически из-за неактивности.');
     }
     chatTimers.delete(chatId);
@@ -58,6 +74,16 @@ const isImageRequest = (text) => {
   return keywords.some(k => text.toLowerCase().includes(k));
 };
 
+const isImageEditRequest = (text) => {
+  const keywords = [
+    'добавь', 'добавить', 'дорисуй', 'дорисовать', 'измени картинку', 'измени изображение',
+    'поменяй картинку', 'поменяй изображение', 'на картинке добавь', 'на изображении добавь',
+    'к картинке добавь', 'в картинку добавь', 'измени на картинке', 'убери с картинки',
+    'add to image', 'edit image', 'modify image', 'change the image',
+  ];
+  return keywords.some(k => text.toLowerCase().includes(k));
+};
+
 const progressSteps = [
   '⏳ Получил твой вопрос...',
   '🔍 Анализирую запрос...',
@@ -69,6 +95,12 @@ const imageProgressSteps = [
   '⏳ Получил запрос на картинку...',
   '🎨 Готовлю описание для генерации...',
   '🖼️ Генерирую изображение...',
+];
+
+const imageEditProgressSteps = [
+  '⏳ Понял, хочешь изменить картинку...',
+  '🎨 Объединяю описание...',
+  '🖼️ Перегенерирую изображение...',
 ];
 
 const logRequest = (msg, type, content) => {
@@ -138,7 +170,15 @@ bot.on('message', async (msg) => {
   logRequest(msg, 'text', userText);
   resetInactivityTimer(chatId);
   const imageMode = isImageRequest(userText);
-  const steps = imageMode ? imageProgressSteps : progressSteps;
+  const wantsEdit = !imageMode && isImageEditRequest(userText);
+  const editMode = wantsEdit && lastImagePrompt.has(chatId);
+
+  // Пользователь хочет редактировать, но картинки ещё нет
+  if (wantsEdit && !lastImagePrompt.has(chatId)) {
+    return bot.sendMessage(chatId, '🖼️ Сначала попроси меня нарисовать картинку, а потом я смогу что-то добавить на неё.');
+  }
+
+  const steps = imageMode ? imageProgressSteps : editMode ? imageEditProgressSteps : progressSteps;
 
   const progressMsg = await bot.sendMessage(chatId, steps[0]);
   const msgId = progressMsg.message_id;
@@ -154,17 +194,25 @@ bot.on('message', async (msg) => {
   }, 1500);
 
   try {
-    if (imageMode) {
+    if (imageMode || editMode) {
+      let prompt = userText;
+      if (editMode) {
+        const prevPrompt = lastImagePrompt.get(chatId);
+        prompt = `${prevPrompt}. Дополнительно: ${userText}`;
+      }
+
       // Генерация картинки через DALL-E
       const response = await openai.images.generate({
         model: 'dall-e-3',
-        prompt: userText,
+        prompt,
         n: 1,
         size: '1024x1024',
       });
 
       clearInterval(progressInterval);
       const imageUrl = response.data[0].url;
+      lastImagePrompt.set(chatId, prompt);
+      saveImagePrompts(lastImagePrompt);
 
       await bot.deleteMessage(chatId, msgId);
       await bot.sendPhoto(chatId, imageUrl, { caption: '✅ Готово!' });
@@ -204,11 +252,15 @@ bot.onText(/\/myid/, (msg) => {
 
 bot.onText(/\/clear/, (msg) => {
   chatHistory.delete(msg.chat.id);
+  lastImagePrompt.delete(msg.chat.id);
+  saveImagePrompts(lastImagePrompt);
   bot.sendMessage(msg.chat.id, '🗑️ История чата очищена.');
 });
 
 bot.onText(/\/end/, (msg) => {
   chatHistory.delete(msg.chat.id);
+  lastImagePrompt.delete(msg.chat.id);
+  saveImagePrompts(lastImagePrompt);
   bot.sendMessage(msg.chat.id, '👋 Conversation ended. Send a message to start a new one.');
 });
 
