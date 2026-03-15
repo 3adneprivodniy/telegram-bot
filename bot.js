@@ -114,6 +114,50 @@ const imageEditProgressSteps = [
   '🖼️ Перегенерирую изображение...',
 ];
 
+const isRealTimeRequest = (text) => {
+  const keywords = [
+    'курс', 'доллар', 'евро', 'рубл', 'валют', 'биткоин', 'bitcoin', 'btc',
+    'ethereum', 'eth', 'крипт', 'crypto', 'цена биткоин', 'стоимость биткоин',
+  ];
+  return keywords.some(k => text.toLowerCase().includes(k));
+};
+
+const fetchRealTimeData = async (text) => {
+  const lower = text.toLowerCase();
+  const isCrypto = ['биткоин', 'bitcoin', 'btc', 'ethereum', 'eth', 'крипт', 'crypto'].some(k => lower.includes(k));
+  const isCurrency = ['курс', 'доллар', 'евро', 'рубл', 'валют'].some(k => lower.includes(k));
+
+  const results = [];
+
+  if (isCrypto) {
+    try {
+      const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether&vs_currencies=usd,rub,eur');
+      const data = await res.json();
+      const btc = data.bitcoin;
+      const eth = data.ethereum;
+      results.push(
+        `Актуальные цены криптовалют (CoinGecko):\n` +
+        `Bitcoin (BTC): $${btc.usd.toLocaleString()} | ${btc.rub.toLocaleString()} ₽ | €${btc.eur.toLocaleString()}\n` +
+        `Ethereum (ETH): $${eth.usd.toLocaleString()} | ${eth.rub.toLocaleString()} ₽ | €${eth.eur.toLocaleString()}`
+      );
+    } catch (e) { console.error('Crypto fetch error:', e.message); }
+  }
+
+  if (isCurrency) {
+    try {
+      const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=RUB,EUR,GBP,CNY,KZT');
+      const data = await res.json();
+      const r = data.rates;
+      results.push(
+        `Актуальные курсы валют (Frankfurter):\n` +
+        `1 USD = ${r.RUB?.toFixed(2)} ₽ | ${r.EUR?.toFixed(4)} € | ${r.GBP?.toFixed(4)} £ | ${r.CNY?.toFixed(4)} ¥ | ${r.KZT?.toFixed(2)} ₸`
+      );
+    } catch (e) { console.error('Currency fetch error:', e.message); }
+  }
+
+  return results.length > 0 ? results.join('\n\n') : null;
+};
+
 const logRequest = (msg, type, content) => {
   const user = msg.from?.username ? `@${msg.from.username}` : msg.from?.first_name || 'unknown';
   const time = new Date().toISOString();
@@ -230,7 +274,15 @@ bot.on('message', async (msg) => {
 
     } else {
       // Обычный текстовый ответ через Claude с историей
-      addToHistory(chatId, 'user', userText);
+      let messageForClaude = userText;
+      if (isRealTimeRequest(userText)) {
+        const realTimeData = await fetchRealTimeData(userText);
+        if (realTimeData) {
+          messageForClaude = `${userText}\n\n[Актуальные данные на сегодня:\n${realTimeData}]`;
+        }
+      }
+
+      addToHistory(chatId, 'user', messageForClaude);
 
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
