@@ -22,6 +22,17 @@ const downloadImageAsBase64 = (url) => new Promise((resolve, reject) => {
   }).on('error', reject);
 });
 
+// Персистентное хранилище новых пользователей
+const SEEN_USERS_FILE = './seenUsers.json';
+const loadSeenUsers = () => {
+  try { return new Set(JSON.parse(fs.readFileSync(SEEN_USERS_FILE, 'utf8'))); }
+  catch { return new Set(); }
+};
+const saveSeenUsers = (set) => {
+  fs.writeFileSync(SEEN_USERS_FILE, JSON.stringify([...set]));
+};
+const seenUsers = loadSeenUsers();
+
 // Персистентное хранилище последних промптов картинок
 const IMAGE_PROMPTS_FILE = './lastImagePrompts.json';
 const loadImagePrompts = () => {
@@ -264,41 +275,53 @@ bot.onText(/\/end/, (msg) => {
   bot.sendMessage(msg.chat.id, '👋 Conversation ended. Send a message to start a new one.');
 });
 
-bot.onText(/\/start/, (msg) => {
-  if (msg.chat.id === 7931160874) {
-    bot.sendMessage(
-      msg.chat.id,
+const commandsText = (chatId) => {
+  if (chatId === 7931160874) {
+    return (
       'привет Дашуля💕 от твоего любимого\n' +
       'теперь ты можешь сложные вопросы на которые твой любимый не может ответить задавать их мне\n\n' +
       'вот команды которые тебе пригодится в использывание меня\n' +
-      '/start начать диалог\n' +
-      '/end закончить диалог\n' +
-      '/clear очистить историю чата\n\n' +
+      '/commands — показать команды\n' +
+      '/end — закончить диалог\n' +
+      '/clear — очистить историю чата\n\n' +
       'люблю тебя❤️ от @Nazarbbaev'
     );
-    return;
   }
-
-  bot.sendMessage(
-    msg.chat.id,
+  return (
     '👋 Привет! Я ИИ-бот.\n\n' +
     'Вот что я умею:\n\n' +
     '💬 Задай любой вопрос — отвечу текстом\n' +
     '🎨 Напиши "нарисуй [описание]" — сгенерирую картинку\n' +
     '🖼️ Отправь фото или скриншот — расскажу что на нём\n' +
-    '🧠 Помню контекст разговора (последние 10 сообщений)\n\n' +
+    '🧠 Помню контекст разговора (последние 25 сообщений)\n\n' +
     '📋 Команды:\n' +
-    '/start — показать это сообщение\n' +
+    '/commands — показать это сообщение\n' +
     '/end — завершить разговор и очистить историю\n' +
     '/clear — очистить историю чата'
   );
+};
+
+bot.onText(/\/start/, (msg) => {
+  const chatId = msg.chat.id;
+  const isNew = !seenUsers.has(chatId);
+  if (isNew) {
+    seenUsers.add(chatId);
+    saveSeenUsers(seenUsers);
+    bot.sendMessage(chatId, commandsText(chatId));
+  } else {
+    bot.sendMessage(chatId, '👋 Привет! Просто задай вопрос или напиши "нарисуй [описание]".\nДля списка команд используй /commands.');
+  }
+});
+
+bot.onText(/\/commands/, (msg) => {
+  bot.sendMessage(msg.chat.id, commandsText(msg.chat.id));
 });
 
 bot.on('polling_error', (err) => console.error('Polling error:', err.message));
 
 // Регистрация команд в меню Telegram
 bot.setMyCommands([
-  { command: 'start', description: 'Показать возможности бота' },
+  { command: 'commands', description: 'Показать возможности и команды' },
   { command: 'end', description: 'Завершить разговор и очистить историю' },
   { command: 'clear', description: 'Очистить историю чата' },
 ]);

@@ -1,3 +1,4 @@
 node_modules/
 .env
 lastImagePrompts.json
+seenUsers.json
