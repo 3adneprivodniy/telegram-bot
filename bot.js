@@ -118,14 +118,36 @@ const isRealTimeRequest = (text) => {
   const keywords = [
     'курс', 'доллар', 'евро', 'рубл', 'валют', 'биткоин', 'bitcoin', 'btc',
     'ethereum', 'eth', 'крипт', 'crypto', 'цена биткоин', 'стоимость биткоин',
+    'новост', 'news', 'что случилось', 'что происходит', 'последние события',
   ];
   return keywords.some(k => text.toLowerCase().includes(k));
+};
+
+const fetchNews = async () => {
+  try {
+    const res = await fetch('https://news.google.com/rss?hl=ru&gl=RU&ceid=RU:ru');
+    const xml = await res.text();
+    const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
+    const headlines = items.slice(0, 8).map(item => {
+      const title = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) ||
+                     item.match(/<title>(.*?)<\/title>/))?.[1] || '';
+      return title.trim();
+    }).filter(Boolean);
+    return headlines.length > 0
+      ? `Последние новости (Google News, ${new Date().toLocaleDateString('ru-RU')}):\n` +
+        headlines.map((h, i) => `${i + 1}. ${h}`).join('\n')
+      : null;
+  } catch (e) {
+    console.error('News fetch error:', e.message);
+    return null;
+  }
 };
 
 const fetchRealTimeData = async (text) => {
   const lower = text.toLowerCase();
   const isCrypto = ['биткоин', 'bitcoin', 'btc', 'ethereum', 'eth', 'крипт', 'crypto'].some(k => lower.includes(k));
   const isCurrency = ['курс', 'доллар', 'евро', 'рубл', 'валют'].some(k => lower.includes(k));
+  const isNews = ['новост', 'news', 'что случилось', 'что происходит', 'последние события'].some(k => lower.includes(k));
 
   const results = [];
 
@@ -153,6 +175,11 @@ const fetchRealTimeData = async (text) => {
         `1 USD = ${r.RUB?.toFixed(2)} ₽ | ${r.EUR?.toFixed(4)} € | ${r.GBP?.toFixed(4)} £ | ${r.CNY?.toFixed(4)} ¥ | ${r.KZT?.toFixed(2)} ₸`
       );
     } catch (e) { console.error('Currency fetch error:', e.message); }
+  }
+
+  if (isNews) {
+    const news = await fetchNews();
+    if (news) results.push(news);
   }
 
   return results.length > 0 ? results.join('\n\n') : null;
