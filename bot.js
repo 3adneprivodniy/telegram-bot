@@ -116,16 +116,16 @@ const imageEditProgressSteps = [
 
 const isRealTimeRequest = (text) => {
   const keywords = [
-    'курс', 'доллар', 'евро', 'рубл', 'валют', 'биткоин', 'bitcoin', 'btc',
+    'курс', 'доллар', 'евро', 'гривн', 'валют', 'биткоин', 'bitcoin', 'btc',
     'ethereum', 'eth', 'крипт', 'crypto', 'цена биткоин', 'стоимость биткоин',
-    'новост', 'news', 'что случилось', 'что происходит', 'последние события',
+    'новост', 'news', 'що сталось', 'що відбувається', 'що случилось', 'что происходит', 'последние события',
   ];
   return keywords.some(k => text.toLowerCase().includes(k));
 };
 
 const fetchNews = async () => {
   try {
-    const res = await fetch('https://news.google.com/rss?hl=ru&gl=RU&ceid=RU:ru');
+    const res = await fetch('https://news.google.com/rss?hl=uk&gl=UA&ceid=UA:uk');
     const xml = await res.text();
     const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
     const headlines = items.slice(0, 8).map(item => {
@@ -134,7 +134,7 @@ const fetchNews = async () => {
       return title.trim();
     }).filter(Boolean);
     return headlines.length > 0
-      ? `Последние новости (Google News, ${new Date().toLocaleDateString('ru-RU')}):\n` +
+      ? `Останні новини (Google News, ${new Date().toLocaleDateString('uk-UA')}):\n` +
         headlines.map((h, i) => `${i + 1}. ${h}`).join('\n')
       : null;
   } catch (e) {
@@ -146,33 +146,33 @@ const fetchNews = async () => {
 const fetchRealTimeData = async (text) => {
   const lower = text.toLowerCase();
   const isCrypto = ['биткоин', 'bitcoin', 'btc', 'ethereum', 'eth', 'крипт', 'crypto'].some(k => lower.includes(k));
-  const isCurrency = ['курс', 'доллар', 'евро', 'рубл', 'валют'].some(k => lower.includes(k));
+  const isCurrency = ['курс', 'доллар', 'евро', 'гривн', 'валют'].some(k => lower.includes(k));
   const isNews = ['новост', 'news', 'что случилось', 'что происходит', 'последние события'].some(k => lower.includes(k));
 
   const results = [];
 
   if (isCrypto) {
     try {
-      const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether&vs_currencies=usd,rub,eur');
+      const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether&vs_currencies=usd,uah,eur');
       const data = await res.json();
       const btc = data.bitcoin;
       const eth = data.ethereum;
       results.push(
         `Актуальные цены криптовалют (CoinGecko):\n` +
-        `Bitcoin (BTC): $${btc.usd.toLocaleString()} | ${btc.rub.toLocaleString()} ₽ | €${btc.eur.toLocaleString()}\n` +
-        `Ethereum (ETH): $${eth.usd.toLocaleString()} | ${eth.rub.toLocaleString()} ₽ | €${eth.eur.toLocaleString()}`
+        `Bitcoin (BTC): $${btc.usd.toLocaleString()} | ${btc.uah.toLocaleString()} ₴ | €${btc.eur.toLocaleString()}\n` +
+        `Ethereum (ETH): $${eth.usd.toLocaleString()} | ${eth.uah.toLocaleString()} ₴ | €${eth.eur.toLocaleString()}`
       );
     } catch (e) { console.error('Crypto fetch error:', e.message); }
   }
 
   if (isCurrency) {
     try {
-      const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=RUB,EUR,GBP,CNY,KZT');
+      const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=UAH,EUR,GBP,CNY,KZT');
       const data = await res.json();
       const r = data.rates;
       results.push(
         `Актуальные курсы валют (Frankfurter):\n` +
-        `1 USD = ${r.RUB?.toFixed(2)} ₽ | ${r.EUR?.toFixed(4)} € | ${r.GBP?.toFixed(4)} £ | ${r.CNY?.toFixed(4)} ¥ | ${r.KZT?.toFixed(2)} ₸`
+        `1 USD = ${r.UAH?.toFixed(2)} ₴ | ${r.EUR?.toFixed(4)} € | ${r.GBP?.toFixed(4)} £ | ${r.CNY?.toFixed(4)} ¥ | ${r.KZT?.toFixed(2)} ₸`
       );
     } catch (e) { console.error('Currency fetch error:', e.message); }
   }
@@ -219,6 +219,7 @@ bot.on('photo', async (msg) => {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
+      system: 'Всі запити надходять від користувачів з України. Відповідай з урахуванням українського контексту. Не згадуй Росію, російські ресурси чи джерела без крайньої необхідності.',
       messages: [{
         role: 'user',
         content: [
@@ -314,6 +315,7 @@ bot.on('message', async (msg) => {
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 1024,
+        system: 'Всі запити надходять від користувачів з України. Відповідай з урахуванням українського контексту. Не згадуй Росію, російські ресурси чи джерела без крайньої необхідності.',
         messages: getHistory(chatId),
       });
 
