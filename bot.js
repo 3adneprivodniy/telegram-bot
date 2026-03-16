@@ -114,10 +114,53 @@ const imageEditProgressSteps = [
   '🖼️ Перегенерирую изображение...',
 ];
 
+const CRYPTO_ID_MAP = {
+  'bitcoin': 'bitcoin', 'биткоин': 'bitcoin', 'btc': 'bitcoin',
+  'ethereum': 'ethereum', 'эфир': 'ethereum', 'ефір': 'ethereum', 'eth': 'ethereum',
+  'tether': 'tether', 'usdt': 'tether',
+  'bnb': 'binancecoin', 'binance': 'binancecoin',
+  'solana': 'solana', 'солана': 'solana', 'sol': 'solana',
+  'xrp': 'ripple', 'ripple': 'ripple',
+  'dogecoin': 'dogecoin', 'doge': 'dogecoin', 'догекоин': 'dogecoin',
+  'cardano': 'cardano', 'ada': 'cardano',
+  'avalanche': 'avalanche-2', 'avax': 'avalanche-2',
+  'polkadot': 'polkadot', 'dot': 'polkadot',
+  'chainlink': 'chainlink', 'link': 'chainlink',
+  'litecoin': 'litecoin', 'ltc': 'litecoin',
+  'polygon': 'matic-network', 'matic': 'matic-network',
+  'shiba': 'shiba-inu', 'shib': 'shiba-inu',
+  'tron': 'tron', 'trx': 'tron',
+  'ton': 'the-open-network', 'тон': 'the-open-network', 'toncoin': 'the-open-network',
+  'usdc': 'usd-coin',
+  'near': 'near',
+  'cosmos': 'cosmos', 'atom': 'cosmos',
+  'stellar': 'stellar', 'xlm': 'stellar',
+  'monero': 'monero', 'xmr': 'monero',
+  'pepe': 'pepe',
+  'notcoin': 'notcoin', 'not': 'notcoin',
+  'sui': 'sui',
+  'aptos': 'aptos',
+  'injective': 'injective-protocol', 'inj': 'injective-protocol',
+  'arbitrum': 'arbitrum', 'arb': 'arbitrum',
+  'optimism': 'optimism', 'op': 'optimism',
+};
+
+const CURRENCY_KEYWORDS = {
+  'доллар': 'USD', 'долар': 'USD', 'usd': 'USD',
+  'евро': 'EUR', 'євро': 'EUR', 'eur': 'EUR',
+  'фунт': 'GBP', 'gbp': 'GBP',
+  'злот': 'PLN', 'pln': 'PLN', 'польськ': 'PLN', 'польск': 'PLN',
+  'франк': 'CHF', 'chf': 'CHF',
+  'єна': 'JPY', 'иена': 'JPY', 'jpy': 'JPY',
+  'тенге': 'KZT', 'kzt': 'KZT',
+  'чеськ': 'CZK', 'czk': 'CZK',
+};
+
 const isRealTimeRequest = (text) => {
   const keywords = [
-    'курс', 'доллар', 'евро', 'гривн', 'валют', 'биткоин', 'bitcoin', 'btc',
-    'ethereum', 'eth', 'крипт', 'crypto', 'цена биткоин', 'стоимость биткоин',
+    'курс', 'доллар', 'долар', 'евро', 'євро', 'гривн', 'валют', 'фунт', 'злот', 'тенге', 'франк',
+    'биткоин', 'bitcoin', 'btc', 'ethereum', 'eth', 'крипт', 'crypto', 'solana', 'sol',
+    'dogecoin', 'doge', 'xrp', 'bnb', 'ton', 'тон', 'shib', 'usdt', 'usdc',
     'новост', 'news', 'що сталось', 'що відбувається', 'що случилось', 'что происходит', 'последние события',
   ];
   return keywords.some(k => text.toLowerCase().includes(k));
@@ -143,38 +186,86 @@ const fetchNews = async () => {
   }
 };
 
+const fetchCurrencyRates = async (text) => {
+  const lower = text.toLowerCase();
+  const res = await fetch('https://bank.gov.ua/NBU_Exchange/exchange_site?json');
+  const data = await res.json();
+  const rateMap = Object.fromEntries(data.map(d => [d.cc, d]));
+
+  const requested = new Set();
+  for (const [kw, cc] of Object.entries(CURRENCY_KEYWORDS)) {
+    if (lower.includes(kw)) requested.add(cc);
+  }
+  const toShow = requested.size > 0
+    ? [...requested]
+    : ['USD', 'EUR', 'GBP', 'PLN', 'CHF', 'JPY'];
+
+  const lines = toShow
+    .filter(cc => rateMap[cc])
+    .map(cc => `1 ${cc} = ${rateMap[cc].rate.toFixed(2)} ₴`);
+
+  return `Курси валют (НБУ, ${new Date().toLocaleDateString('uk-UA')}):\n` + lines.join('\n');
+};
+
+const fetchCryptoPrice = async (text) => {
+  const lower = text.toLowerCase();
+
+  // Визначаємо конкретну монету
+  let coinId = null;
+  for (const [alias, id] of Object.entries(CRYPTO_ID_MAP)) {
+    if (lower.includes(alias)) { coinId = id; break; }
+  }
+
+  // Якщо не знайшли — пробуємо пошук через CoinGecko
+  if (!coinId) {
+    const tickerMatch = text.match(/\b([A-Z]{2,6})\b/);
+    if (tickerMatch) {
+      try {
+        const sr = await fetch(`https://api.coingecko.com/api/v3/search?query=${tickerMatch[1]}`);
+        const sd = await sr.json();
+        coinId = sd.coins?.[0]?.id || null;
+      } catch {}
+    }
+  }
+
+  const ids = coinId || 'bitcoin,ethereum,solana,binancecoin,the-open-network';
+  const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,uah,eur&include_24hr_change=true`);
+  const data = await res.json();
+
+  const LABELS = {
+    'bitcoin': 'Bitcoin (BTC)', 'ethereum': 'Ethereum (ETH)', 'solana': 'Solana (SOL)',
+    'binancecoin': 'BNB', 'the-open-network': 'TON', 'ripple': 'XRP',
+    'dogecoin': 'Dogecoin (DOGE)', 'tether': 'Tether (USDT)', 'tron': 'TRON (TRX)',
+    'matic-network': 'Polygon (MATIC)', 'shiba-inu': 'Shiba Inu (SHIB)',
+  };
+
+  const lines = Object.entries(data).map(([id, p]) => {
+    const label = LABELS[id] || id;
+    const change = p.usd_24h_change ? ` (${p.usd_24h_change > 0 ? '+' : ''}${p.usd_24h_change.toFixed(1)}% за 24г)` : '';
+    return `${label}: $${p.usd?.toLocaleString('en')} | ${p.uah?.toLocaleString('uk')} ₴ | €${p.eur?.toLocaleString('en')}${change}`;
+  });
+
+  return `Курси криптовалют (CoinGecko):\n` + lines.join('\n');
+};
+
 const fetchRealTimeData = async (text) => {
   const lower = text.toLowerCase();
-  const isCrypto = ['биткоин', 'bitcoin', 'btc', 'ethereum', 'eth', 'крипт', 'crypto'].some(k => lower.includes(k));
-  const isCurrency = ['курс', 'доллар', 'евро', 'гривн', 'валют'].some(k => lower.includes(k));
-  const isNews = ['новост', 'news', 'что случилось', 'что происходит', 'последние события'].some(k => lower.includes(k));
+  const isCrypto = Object.keys(CRYPTO_ID_MAP).some(k => lower.includes(k)) ||
+    ['крипт', 'crypto'].some(k => lower.includes(k));
+  const isCurrency = Object.keys(CURRENCY_KEYWORDS).some(k => lower.includes(k)) ||
+    ['курс', 'валют', 'гривн'].some(k => lower.includes(k));
+  const isNews = ['новост', 'news', 'що сталось', 'що відбувається', 'что случилось', 'что происходит', 'последние события'].some(k => lower.includes(k));
 
   const results = [];
 
   if (isCrypto) {
-    try {
-      const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether&vs_currencies=usd,uah,eur');
-      const data = await res.json();
-      const btc = data.bitcoin;
-      const eth = data.ethereum;
-      results.push(
-        `Актуальные цены криптовалют (CoinGecko):\n` +
-        `Bitcoin (BTC): $${btc.usd.toLocaleString()} | ${btc.uah.toLocaleString()} ₴ | €${btc.eur.toLocaleString()}\n` +
-        `Ethereum (ETH): $${eth.usd.toLocaleString()} | ${eth.uah.toLocaleString()} ₴ | €${eth.eur.toLocaleString()}`
-      );
-    } catch (e) { console.error('Crypto fetch error:', e.message); }
+    try { results.push(await fetchCryptoPrice(text)); }
+    catch (e) { console.error('Crypto fetch error:', e.message); }
   }
 
   if (isCurrency) {
-    try {
-      const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=UAH,EUR,GBP,CNY,KZT');
-      const data = await res.json();
-      const r = data.rates;
-      results.push(
-        `Актуальные курсы валют (Frankfurter):\n` +
-        `1 USD = ${r.UAH?.toFixed(2)} ₴ | ${r.EUR?.toFixed(4)} € | ${r.GBP?.toFixed(4)} £ | ${r.CNY?.toFixed(4)} ¥ | ${r.KZT?.toFixed(2)} ₸`
-      );
-    } catch (e) { console.error('Currency fetch error:', e.message); }
+    try { results.push(await fetchCurrencyRates(text)); }
+    catch (e) { console.error('Currency fetch error:', e.message); }
   }
 
   if (isNews) {
