@@ -156,12 +156,107 @@ const CURRENCY_KEYWORDS = {
   'чеськ': 'CZK', 'czk': 'CZK',
 };
 
+const WEATHER_CODE_MAP = {
+  0: 'ясно ☀️', 1: 'переважно ясно 🌤️', 2: 'мінлива хмарність ⛅', 3: 'хмарно ☁️',
+  45: 'туман 🌫️', 48: 'туман з інеєм 🌫️',
+  51: 'мряка 🌦️', 53: 'помірна мряка 🌦️', 55: 'сильна мряка 🌧️',
+  61: 'невеликий дощ 🌧️', 63: 'помірний дощ 🌧️', 65: 'сильний дощ 🌧️',
+  71: 'невеликий сніг ❄️', 73: 'помірний сніг ❄️', 75: 'сильний сніг ❄️',
+  80: 'невеликий зливовий дощ 🌦️', 81: 'зливовий дощ 🌧️', 82: 'сильна злива ⛈️',
+  85: 'снігові шквали ❄️', 86: 'сильні снігові шквали ❄️',
+  95: 'гроза ⛈️', 96: 'гроза з градом ⛈️', 99: 'гроза з сильним градом ⛈️',
+};
+
+const CITY_ALIASES = {
+  'київ': { name: 'Київ', lat: 50.45, lon: 30.52 },
+  'киев': { name: 'Київ', lat: 50.45, lon: 30.52 },
+  'kyiv': { name: 'Київ', lat: 50.45, lon: 30.52 },
+  'kiev': { name: 'Київ', lat: 50.45, lon: 30.52 },
+  'харків': { name: 'Харків', lat: 49.99, lon: 36.23 },
+  'харьков': { name: 'Харків', lat: 49.99, lon: 36.23 },
+  'kharkiv': { name: 'Харків', lat: 49.99, lon: 36.23 },
+  'одеса': { name: 'Одеса', lat: 46.48, lon: 30.72 },
+  'одесса': { name: 'Одеса', lat: 46.48, lon: 30.72 },
+  'odesa': { name: 'Одеса', lat: 46.48, lon: 30.72 },
+  'odessa': { name: 'Одеса', lat: 46.48, lon: 30.72 },
+  'дніпро': { name: 'Дніпро', lat: 48.46, lon: 34.99 },
+  'днепр': { name: 'Дніпро', lat: 48.46, lon: 34.99 },
+  'dnipro': { name: 'Дніпро', lat: 48.46, lon: 34.99 },
+  'львів': { name: 'Львів', lat: 49.84, lon: 24.03 },
+  'львов': { name: 'Львів', lat: 49.84, lon: 24.03 },
+  'lviv': { name: 'Львів', lat: 49.84, lon: 24.03 },
+  'запоріжжя': { name: 'Запоріжжя', lat: 47.84, lon: 35.14 },
+  'запорожье': { name: 'Запоріжжя', lat: 47.84, lon: 35.14 },
+  'вінниця': { name: 'Вінниця', lat: 49.23, lon: 28.47 },
+  'полтава': { name: 'Полтава', lat: 49.59, lon: 34.55 },
+  'миколаїв': { name: 'Миколаїв', lat: 46.97, lon: 32.0 },
+  'херсон': { name: 'Херсон', lat: 46.64, lon: 32.61 },
+  'чернігів': { name: 'Чернігів', lat: 51.5, lon: 31.29 },
+  'суми': { name: 'Суми', lat: 50.91, lon: 34.8 },
+  'луцьк': { name: 'Луцьк', lat: 50.75, lon: 25.34 },
+  'ужгород': { name: 'Ужгород', lat: 48.62, lon: 22.3 },
+  'івано-франківськ': { name: 'Івано-Франківськ', lat: 48.92, lon: 24.71 },
+  'тернопіль': { name: 'Тернопіль', lat: 49.55, lon: 25.59 },
+  'рівне': { name: 'Рівне', lat: 50.62, lon: 26.25 },
+  'хмельницький': { name: 'Хмельницький', lat: 49.42, lon: 26.99 },
+  'черкаси': { name: 'Черкаси', lat: 49.44, lon: 32.06 },
+  'кропивницький': { name: 'Кропивницький', lat: 48.51, lon: 32.27 },
+  'житомир': { name: 'Житомир', lat: 50.26, lon: 28.67 },
+  'луганськ': { name: 'Луганськ', lat: 48.57, lon: 39.35 },
+};
+
+const fetchWeather = async (text) => {
+  const lower = text.toLowerCase();
+  let city = null;
+
+  for (const [alias, data] of Object.entries(CITY_ALIASES)) {
+    if (lower.includes(alias)) { city = data; break; }
+  }
+
+  // Якщо місто не знайдено в списку — пробуємо геокодинг через Open-Meteo
+  if (!city) {
+    const wordMatch = text.match(/погод[аиу]\s+(?:в|у|на)\s+([А-ЯІЇЄA-Z][а-яіїєa-z\-]+)/i) ||
+                      text.match(/(?:в|у|на)\s+([А-ЯІЇЄA-Z][а-яіїєa-z\-]+)\s+погод/i);
+    if (wordMatch) {
+      try {
+        const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(wordMatch[1])}&count=1&language=uk`);
+        const geoData = await geoRes.json();
+        if (geoData.results?.[0]) {
+          const r = geoData.results[0];
+          city = { name: r.name, lat: r.latitude, lon: r.longitude };
+        }
+      } catch {}
+    }
+  }
+
+  // За замовчуванням — Київ
+  if (!city) city = CITY_ALIASES['київ'];
+
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,precipitation&timezone=auto`;
+  const res = await fetch(url);
+  const data = await res.json();
+  const c = data.current;
+
+  const condition = WEATHER_CODE_MAP[c.weather_code] || 'невідомо';
+  const lines = [
+    `Погода в ${city.name} (зараз):`,
+    `🌡️ Температура: ${c.temperature_2m}°C (відчувається як ${c.apparent_temperature}°C)`,
+    `${condition}`,
+    `💧 Вологість: ${c.relative_humidity_2m}%`,
+    `🌬️ Вітер: ${c.wind_speed_10m} км/год`,
+  ];
+  if (c.precipitation > 0) lines.push(`🌧️ Опади: ${c.precipitation} мм`);
+
+  return lines.join('\n');
+};
+
 const isRealTimeRequest = (text) => {
   const keywords = [
     'курс', 'доллар', 'долар', 'евро', 'євро', 'гривн', 'валют', 'фунт', 'злот', 'тенге', 'франк',
     'биткоин', 'bitcoin', 'btc', 'ethereum', 'eth', 'крипт', 'crypto', 'solana', 'sol',
     'dogecoin', 'doge', 'xrp', 'bnb', 'ton', 'тон', 'shib', 'usdt', 'usdc',
     'новост', 'news', 'що сталось', 'що відбувається', 'що случилось', 'что происходит', 'последние события',
+    'погода', 'погодa', 'weather', 'температура', 'дощ', 'сніг', 'хмарно', 'сонячно',
   ];
   return keywords.some(k => text.toLowerCase().includes(k));
 };
@@ -255,6 +350,7 @@ const fetchRealTimeData = async (text) => {
   const isCurrency = Object.keys(CURRENCY_KEYWORDS).some(k => lower.includes(k)) ||
     ['курс', 'валют', 'гривн'].some(k => lower.includes(k));
   const isNews = ['новост', 'news', 'що сталось', 'що відбувається', 'что случилось', 'что происходит', 'последние события'].some(k => lower.includes(k));
+  const isWeather = ['погода', 'погодa', 'weather', 'температура', 'дощ', 'сніг', 'хмарно', 'сонячно'].some(k => lower.includes(k));
 
   const results = [];
 
@@ -271,6 +367,11 @@ const fetchRealTimeData = async (text) => {
   if (isNews) {
     const news = await fetchNews();
     if (news) results.push(news);
+  }
+
+  if (isWeather) {
+    try { results.push(await fetchWeather(text)); }
+    catch (e) { console.error('Weather fetch error:', e.message); }
   }
 
   return results.length > 0 ? results.join('\n\n') : null;
