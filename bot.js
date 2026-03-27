@@ -377,6 +377,22 @@ const fetchRealTimeData = async (text) => {
   return results.length > 0 ? results.join('\n\n') : null;
 };
 
+const withRetry = async (fn, retries = 3, delay = 5000) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (e.status === 529 && i < retries - 1) {
+        console.log(`Anthropic overloaded, retry ${i + 1}/${retries} after ${delay / 1000}s...`);
+        await new Promise(r => setTimeout(r, delay));
+        delay *= 2;
+      } else {
+        throw e;
+      }
+    }
+  }
+};
+
 const logRequest = (msg, type, content) => {
   const user = msg.from?.username ? `@${msg.from.username}` : msg.from?.first_name || 'unknown';
   const time = new Date().toISOString();
@@ -408,7 +424,7 @@ bot.on('photo', async (msg) => {
     const fileLink = await bot.getFileLink(fileId);
     const base64 = await downloadImageAsBase64(String(fileLink));
 
-    const response = await anthropic.messages.create({
+    const response = await withRetry(() => anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
       system: 'Всі запити надходять від користувачів з України. Відповідай з урахуванням українського контексту. Не згадуй Росію, російські ресурси чи джерела без крайньої необхідності. ВАЖЛИВО: визнач мову повідомлення користувача і відповідай ТІЄЮ САМОЮ мовою.',
@@ -419,7 +435,7 @@ bot.on('photo', async (msg) => {
           { type: 'text', text: caption },
         ],
       }],
-    });
+    }));
 
     clearInterval(progressInterval);
     await bot.editMessageText(`✅ Готово!\n\n${response.content[0].text}`, {
@@ -504,12 +520,12 @@ bot.on('message', async (msg) => {
 
       addToHistory(chatId, 'user', messageForClaude);
 
-      const response = await anthropic.messages.create({
+      const response = await withRetry(() => anthropic.messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 1024,
         system: 'Всі запити надходять від користувачів з України. Відповідай з урахуванням українського контексту. Не згадуй Росію, російські ресурси чи джерела без крайньої необхідності. ВАЖЛИВО: визнач мову повідомлення користувача і відповідай ТІЄЮ САМОЮ мовою.',
         messages: getHistory(chatId),
-      });
+      }));
 
       clearInterval(progressInterval);
       const answer = response.content[0].text;
